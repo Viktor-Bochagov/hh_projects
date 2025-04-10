@@ -1,64 +1,64 @@
-import json
-import requests
-from src.subclasses import HeadHunterAPI, JsonJob, Vacancy
-from src.utils import format_salary
-from pathlib import Path
+from src.Vacancy_handler import JSONFileHandler
+from src.api import HeadHunterAPI
+from src.utils import filter_vacancies
+from src.vacancies import Vacancy
 
 
-def user_interaction(filepaths: str = "vacancies.json") -> str:
-    """Пользовательская функция"""
-    hh_api = HeadHunterAPI()
-    JsonJob(filepaths)
+def main():
+    api = HeadHunterAPI()
+    file_manager = JSONFileHandler('data/vacancies.json')  # Убедитесь, что вы передаете имя файла
 
-    try:
-        search_query = input("Введите поисковый запрос: ")
-        top_n = int(input("Введите количество вакансий для вывода в топ N: "))
-        filter_words = input("Введите ключевые слова для фильтрации вакансий "
-                             "(разделяйте запятыми): ").lower().split(",")
-        salary_range = input("Введите диапазон зарплат "
-                             "(например, 100000-150000, или оставьте пустым): ")
+    while True:
+        print("\n1. Получить вакансии по запросу")
+        print("2. Получить минимальную зарплату по вакансии")
+        print("3. Удалить вакансию по названию")
+        print("4. Выход")
+        choice = input("Выберите действие: ")
 
-        hh_vacancies = hh_api.get_vacancies(search_query)
+        if choice == '1':
+            keyword = input('Введите ключевое слово для поиска вакансий: ')
+            vacancies_data = api.get_vacancies(keyword)
+            vacancies = []
+            for item in vacancies_data:
+                vacancy = Vacancy(
+                    id=item['id'],
+                    title=item['name'],
+                    salary=item['salary']['from'] if item['salary'] else 0,
+                    url=item['alternate_url']
+                )
+                vacancies.append(vacancy)
 
-        vacancies_list = [Vacancy(vac['name'], vac['alternate_url'], vac['snippet']['requirement'],
-                                  format_salary(vac.get('salary'))) for vac in hh_vacancies]
+            # Сохраняем вакансии в файл
+            file_manager.save_data([{
+                'id': vacancy.id,
+                'title': vacancy.title,
+                'salary': vacancy.salary,
+                'url': vacancy.url
+            } for vacancy in vacancies])
+            print(f"Добавлена вакансия: {vacancy.title}")
 
-        filtered_vacancies = [v for v in vacancies_list if v.description is not None and
-                              any(word in v.description.lower() for word in filter_words)]
+        elif choice == '2':
+            min_salary = float(input('Введите минимальную зарплату: '))
+            filtered_vacancies = filter_vacancies([{
+                'id': vacancy.id,
+                'title': vacancy.title,
+                'salary': vacancy.salary,
+                'url': vacancy.url
+            } for vacancy in vacancies], min_salary)
+            print('Отфильтрованные вакансии: ')
+            for vacancy in filtered_vacancies:
+                print(vacancy)
 
-        ranged_vacancies = filtered_vacancies
+        elif choice == '3':
+            title = input("Введите название вакансии для удаления: ")
+            file_manager.delete_vacancy(title)
+            print(f"Вакансия '{title}' удалена.")
 
-        if salary_range:
-            try:
-                min_salary, max_salary = map(int, salary_range.split("-"))
-                ranged_vacancies = [v for v in filtered_vacancies if min_salary <=
-                                    int(v.salary.split()[0]if v.salary else 0) <= max_salary]
-            except (ValueError, IndexError):
-                print("Неверный формат диапазона зарплат. Используйте формат: 100000-150000")
+        elif choice == '4':
+            break
 
-        sorted_vacancies = sorted(ranged_vacancies, key=lambda v: v.name)
-
-        top_vacancies = sorted_vacancies[:top_n]
-
-        for vacancy in top_vacancies:
-            print(f"{vacancy.name}: {vacancy.url}")
-
-        json_data = [v.to_dict() for v in top_vacancies]
-        return json.dumps(json_data, indent=4, ensure_ascii=False)
-
-    except json.JSONDecodeError as e:
-        return json.dumps({"error": f"Ошибка декодирования JSON: {e}"})
-    except ValueError:
-        return json.dumps({"error": "Некорректный ввод данных."})
-    except requests.exceptions.RequestException as e:
-        return json.dumps({"error": f"Ошибка сети: {e}"})
-    except Exception as e:
-        return json.dumps({"error": f"Произошла ошибка: {e}"})
-
+        else:
+            print("Неверный выбор. Пожалуйста, попробуйте снова.")
 
 if __name__ == "__main__":
-    filepath = Path(r"C:\Users\vitek\PycharmProjects\hh_projects\data\vacancies.json")
-    json_result = user_interaction(filepath)
-    print(json_result)
-    with filepath.open('w', encoding='utf-8') as f:
-        f.write(json_result)
+    main()
